@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat Site 2</title>
+<link rel="stylesheet" href="styles.css">
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<script>
+    // --- STEP 1: PASTE YOUR RENDER URL HERE ---
+    // It should look like: const socket = io('https://your-app.onrender.com');
+    const socket = io('https://cccorpchat.onrender.com'); 
+</script>
+
+</head>
+<body>
+<div id="main-wrapper">
+
+    <div id="dm-sidebar">
+        <div id="dm-header">Contacts</div>
+        <div id="dm-list"></div>
+    </div>
+
+    <div id="chat-container">
+        <div id="username-area">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <button id="avatar-upload-btn" title="Set Avatar">
+                    <img id="current-avatar-preview" src="placeholder-avatar.png" alt="Avatar">
+                </button>
+                <h3 id="chat-header-label">username:</h3>
+            </div>
+            
+            <div id="username-controls">
+                <input type="text" id="username-input" placeholder="Enter username...">
+                <button id="set-username-btn">Join</button>
+            </div>
+        </div>
+        
+        <div id="messages"></div>
+        
+        <div id="message-input-area">
+            <input type="text" id="message-input" placeholder="Type a message..." disabled>
+            <button id="send-btn" disabled>Send</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- CLIENT SIDE LOGIC ---
+    // This is the simplified logic to make the chat work
+    const messageInput = document.getElementById('message-input');
+    const sendBtn = document.getElementById('send-btn');
+    const messagesDiv = document.getElementById('messages');
+    const usernameInput = document.getElementById('username-input');
+    const setUsernameBtn = document.getElementById('set-username-btn');
+    let currentUsername = "";
+
+    // 1. Join Chat
+    setUsernameBtn.onclick = () => {
+        const username = usernameInput.value.trim();
+        if (username) {
+            currentUsername = username;
+            socket.emit('set-username', { username: username, avatar: null });
+            usernameInput.disabled = true;
+            setUsernameBtn.disabled = true;
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+        }
+    };
+
+    // 2. Send Message
+    function sendMessage() {
+        const text = messageInput.value.trim();
+        if (text) {
+            socket.emit('chat-message', text);
+            messageInput.value = '';
+        }
+    }
+    sendBtn.onclick = sendMessage;
+    messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
+
+    // 3. Receive Message
+    socket.on('chat-message', (msg) => {
+        const div = document.createElement('div');
+        div.style.padding = "5px";
+        div.style.margin = "5px 0";
+        div.style.borderBottom = "1px solid #333";
+        // Simple format: [Time] User: Message
+        div.innerHTML = `<strong>${msg.sender}</strong>: ${msg.text}`;
+        messagesDiv.appendChild(div);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+
+    // 4. Load History
+    socket.on('history', (history) => {
+        messagesDiv.innerHTML = '';
+        history.forEach(msg => {
+            const div = document.createElement('div');
+            div.style.padding = "5px";
+            div.style.borderBottom = "1px solid #333";
+            div.innerHTML = `<strong>${msg.sender}</strong>: ${msg.text}`;
+            messagesDiv.appendChild(div);
+        });
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    });
+</script>
+</body>
+</html>
