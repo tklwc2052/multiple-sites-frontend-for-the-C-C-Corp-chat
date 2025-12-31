@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The C&C Corp chat</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+</head>
+<body>
+<div id="main-wrapper">
+
+    <div id="dm-sidebar">
+        <div id="dm-header">Contacts</div>
+        <div id="dm-list"></div>
+    </div>
+
+    <div id="chat-container">
+        <div id="username-area">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <button id="avatar-upload-btn" title="Set Avatar">
+                    <img id="current-avatar-preview" src="placeholder-avatar.png" alt="Avatar">
+                </button>
+                <h3 id="chat-header-label">username:</h3>
+            </div>
+            
+            <div id="username-controls">
+                <input type="text" id="username-input" placeholder="whatr we callin ya">
+                <button id="set-username-btn">Save</button>
+            </div>
+        </div>
+        
+        <div id="messages"></div>
+        
+        <button id="scroll-down-btn">↓ New Messages</button>
+
+        <div id="typing-indicator"></div>
+
+        <div id="message-input-area">
+            <div id="reply-bar" style="display:none;">
+                <span>Replying to <b id="reply-to-user"></b></span>
+                <button id="cancel-reply-btn">x</button>
+            </div>
+            <div class="input-row">
+                <textarea id="message-input" placeholder="type type type..." rows="1"></textarea>
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<input type="file" id="file-input" accept="image/*" style="display:none;">
+
+<script>
+    // ----------------------------------------------------
+    // IMPORTANT: REPLACE THIS URL WITH YOUR SITE 1 URL
+    // Example: const socket = io("https://my-cool-chat.glitch.me");
+    // ----------------------------------------------------
+    const socket = io("https://cccorpchat.onrender.com");
+
+    // --- Variables ---
+    let currentUsername = localStorage.getItem('chatUsername') || '';
+    let currentAvatarBase64 = localStorage.getItem('chatAvatar') || '';
+    let replyTo = null; // { id, username, text }
+
+    // --- DOM Elements ---
+    const messagesDiv = document.getElementById('messages');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-btn');
+    const usernameInput = document.getElementById('username-input');
+    const setUsernameBtn = document.getElementById('set-username-btn');
+    const typingIndicator = document.getElementById('typing-indicator');
+    const scrollDownBtn = document.getElementById('scroll-down-btn');
+    const replyBar = document.getElementById('reply-bar');
+    const replyToUserSpan = document.getElementById('reply-to-user');
+    const cancelReplyBtn = document.getElementById('cancel-reply-btn');
+    const avatarUploadBtn = document.getElementById('avatar-upload-btn');
+    const fileInput = document.getElementById('file-input');
+    const currentAvatarPreview = document.getElementById('current-avatar-preview');
+
+    // --- Helper Functions ---
+    function scrollToBottom() {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        scrollDownBtn.style.display = 'none';
+    }
+
+    // --- Socket Events ---
+    socket.on('connect', () => {
+        console.log("Connected to the Brain (Site 1)");
+        if (currentUsername) {
+            socket.emit('set-username', { username: currentUsername, avatar: currentAvatarBase64 });
+        }
+    });
+
+    socket.on('chat-history', (history) => {
+        messagesDiv.innerHTML = '';
+        history.forEach(addMessageToUI);
+        scrollToBottom();
+    });
+
+    socket.on('chat-message', (data) => {
+        const isNearBottom = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight < 100;
+        addMessageToUI(data);
+        if (isNearBottom) scrollToBottom();
+        else scrollDownBtn.style.display = 'block';
+    });
+
+    socket.on('user-typing', (users) => {
+        const others = users.filter(u => u !== currentUsername);
+        if (others.length > 0) {
+            typingIndicator.textContent = others.join(', ') + (others.length === 1 ? ' is typing...' : ' are typing...');
+            typingIndicator.style.display = 'block';
+        } else {
+            typingIndicator.style.display = 'none';
+        }
+    });
+
+    // --- UI Logic ---
+    function addMessageToUI(data) {
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message');
+        
+        // Check if message is mine or others
+        if (data.username === currentUsername) {
+            msgDiv.classList.add('own');
+        } else {
+            msgDiv.classList.add('other');
+        }
+
+        // Avatar
+        const avatarImg = document.createElement('img');
+        avatarImg.classList.add('msg-avatar');
+        avatarImg.src = data.avatar || 'placeholder-avatar.png';
+        
+        // Bubble
+        const bubble = document.createElement('div');
+        bubble.classList.add('bubble');
+
+        // Username Label
+        const userLabel = document.createElement('div');
+        userLabel.classList.add('msg-username');
+        userLabel.textContent = data.username;
+
+        // Reply Preview
+        if (data.replyTo) {
+            const replyPreview = document.createElement('div');
+            replyPreview.classList.add('reply-preview');
+            replyPreview.textContent = `Replying to ${data.replyTo.username}: ${data.replyTo.text}`;
+            bubble.appendChild(replyPreview);
+        }
+
+        // Text Content
+        const textSpan = document.createElement('div');
+        textSpan.textContent = data.msg;
+
+        // Timestamp
+        const timeSpan = document.createElement('div');
+        timeSpan.classList.add('timestamp');
+        timeSpan.textContent = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        bubble.appendChild(userLabel);
+        bubble.appendChild(textSpan);
+        bubble.appendChild(timeSpan);
+
+        if (msgDiv.classList.contains('own')) {
+            msgDiv.appendChild(bubble);
+            msgDiv.appendChild(avatarImg);
+        } else {
+            msgDiv.appendChild(avatarImg);
+            msgDiv.appendChild(bubble);
+        }
+
+        messagesDiv.appendChild(msgDiv);
+    }
+
+    function sendMessage() {
+        const text = messageInput.value.trim();
+        if (!text) return;
+        if (!currentUsername) {
+            alert('Please set a username first!');
+            return;
+        }
+
+        const msgData = {
+            msg: text,
+            username: currentUsername,
+            avatar: currentAvatarBase64,
+            replyTo: replyTo,
+            timestamp: Date.now()
+        };
+
+        socket.emit('chat-message', msgData);
+        messageInput.value = '';
+        cancelReply();
+        socket.emit('typing', false); // Stop typing indicator
+    }
+
+    function cancelReply() {
+        replyTo = null;
+        replyBar.style.display = 'none';
+    }
+
+    // --- Event Listeners ---
+    sendButton.onclick = sendMessage;
+
+    messageInput.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        } else {
+            socket.emit('typing', true);
+            clearTimeout(window.typingTimeout);
+            window.typingTimeout = setTimeout(() => socket.emit('typing', false), 2000);
+        }
+    };
+
+    avatarUploadBtn.onclick = () => fileInput.click();
+    
+    fileInput.onchange = (e) => {
+        const f = e.target.files[0];
+        if (f) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                currentAvatarBase64 = ev.target.result;
+                currentAvatarPreview.src = currentAvatarBase64;
+                localStorage.setItem('chatAvatar', currentAvatarBase64);
+                if (currentUsername) socket.emit('set-username', { username: currentUsername, avatar: currentAvatarBase64 });
+            };
+            reader.readAsDataURL(f);
+        }
+    };
+
+    setUsernameBtn.onclick = () => {
+        const val = usernameInput.value.trim();
+        if (val) {
+            currentUsername = val;
+            localStorage.setItem('chatUsername', val);
+            usernameInput.disabled = true;
+            setUsernameBtn.disabled = true;
+            socket.emit('set-username', { username: currentUsername, avatar: currentAvatarBase64 });
+        }
+    };
+
+    // Initialize UI from LocalStorage
+    if (currentUsername) {
+        usernameInput.value = currentUsername;
+        usernameInput.disabled = true;
+        setUsernameBtn.disabled = true;
+    }
+    if (currentAvatarBase64) {
+        currentAvatarPreview.src = currentAvatarBase64;
+    }
+</script>
+</body>
+</html>
